@@ -1,6 +1,6 @@
 +++
 title = 'Beyond Prometheus: Building a High-Cardinality CockroachDB Receiver for OpenTelemetry'
-date = 2024-10-31T00:00:00-07:00
+date = 2025-10-31T00:00:00-07:00
 draft = false
 tags = ['opentelemetry', 'cockroachdb', 'observability', 'otel', 'monitoring', 'high-cardinality']
 description = 'How to build a custom OpenTelemetry receiver that queries CockroachDB internals directly, preserving high-cardinality dimensional data that standard Prometheus scraping loses'
