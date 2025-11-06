@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Tags on OpenTelemetry Architecture &amp; Implementation</title>
+    <link>http://localhost:1313/otel-blog/tags/</link>
+    <description>Recent content in Tags on OpenTelemetry Architecture &amp; Implementation</description>
+    <generator>Hugo -- 0.152.2</generator>
+    <language>en-us</language>
+    <lastBuildDate>Thu, 31 Oct 2024 00:00:00 -0700</lastBuildDate>
+    <atom:link href="http://localhost:1313/otel-blog/tags/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Cockroachdb</title>
+      <link>http://localhost:1313/otel-blog/tags/cockroachdb/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/cockroachdb/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>High-Cardinality</title>
+      <link>http://localhost:1313/otel-blog/tags/high-cardinality/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/high-cardinality/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Monitoring</title>
+      <link>http://localhost:1313/otel-blog/tags/monitoring/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/monitoring/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Observability</title>
+      <link>http://localhost:1313/otel-blog/tags/observability/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/observability/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Opentelemetry</title>
+      <link>http://localhost:1313/otel-blog/tags/opentelemetry/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/opentelemetry/</guid>
+      <description></description>
+    </item>
+    <item>
+      <title>Otel</title>
+      <link>http://localhost:1313/otel-blog/tags/otel/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/tags/otel/</guid>
+      <description></description>
+    </item>
+  </channel>
+</rss>

@@ -1,0 +1,12 @@
+baseURL = 'https://npcomplete777.github.io/otel-blog/'
+languageCode = 'en-us'
+title = 'OpenTelemetry Architecture & Implementation'
+theme = 'PaperMod'
+
+[params]
+  description = "Enterprise OpenTelemetry implementation patterns, custom receiver development, and observability architecture"
+  author = "Aaron Jacobs"
+  ShowReadingTime = true
+  ShowCodeCopyButtons = true
+  ShowPostNavLinks = true
+  ShowBreadCrumbs = true

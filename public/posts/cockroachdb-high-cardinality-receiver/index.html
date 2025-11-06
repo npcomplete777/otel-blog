@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en" dir="auto" data-theme="auto">
+
+<head><script src="/otel-blog/livereload.js?mindelay=10&amp;v=2&amp;port=1313&amp;path=otel-blog/livereload" data-no-instant defer></script><meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+<meta name="robots" content="noindex, nofollow">
+<title>Beyond Prometheus: Building a High-Cardinality CockroachDB Receiver for OpenTelemetry | OpenTelemetry Architecture &amp; Implementation</title>
+<meta name="keywords" content="opentelemetry, cockroachdb, observability, otel, monitoring, high-cardinality">
+<meta name="description" content="How to build a custom OpenTelemetry receiver that queries CockroachDB internals directly, preserving high-cardinality dimensional data that standard Prometheus scraping loses">
+<meta name="author" content="Aaron Jacobs">
+<link rel="canonical" href="http://localhost:1313/otel-blog/posts/cockroachdb-high-cardinality-receiver/">
+<link crossorigin="anonymous" href="/otel-blog/assets/css/stylesheet.343cc480b9ffc8f04ccbe5e968ad674880cab773ec19905e93033065c1e7a804.css" integrity="sha256-NDzEgLn/yPBMy&#43;XpaK1nSIDKt3PsGZBekwMwZcHnqAQ=" rel="preload stylesheet" as="style">
+<link rel="icon" href="http://localhost:1313/otel-blog/favicon.ico">
+<link rel="icon" type="image/png" sizes="16x16" href="http://localhost:1313/otel-blog/favicon-16x16.png">
+<link rel="icon" type="image/png" sizes="32x32" href="http://localhost:1313/otel-blog/favicon-32x32.png">
+<link rel="apple-touch-icon" href="http://localhost:1313/otel-blog/apple-touch-icon.png">
+<link rel="mask-icon" href="http://localhost:1313/otel-blog/safari-pinned-tab.svg">
+<meta name="theme-color" content="#2e2e33">
+<meta name="msapplication-TileColor" content="#2e2e33">
+<link rel="alternate" hreflang="en" href="http://localhost:1313/otel-blog/posts/cockroachdb-high-cardinality-receiver/">
+<noscript>
+    <style>
+        #theme-toggle,
+        .top-link {
+            display: none;
+        }
+
+    </style>
+    <style>
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --theme: rgb(29, 30, 32);
+                --entry: rgb(46, 46, 51);
+                --primary: rgb(218, 218, 219);
+                --secondary: rgb(155, 156, 157);
+                --tertiary: rgb(65, 66, 68);
+                --content: rgb(196, 196, 197);
+                --code-block-bg: rgb(46, 46, 51);
+                --code-bg: rgb(55, 56, 62);
+                --border: rgb(51, 51, 51);
+                color-scheme: dark;
+            }
+
+            .list {
+                background: var(--theme);
+            }
+
+            .toc {
+                background: var(--entry);
+            }
+        }
+
+        @media (prefers-color-scheme: light) {
+            .list::-webkit-scrollbar-thumb {
+                border-color: var(--code-bg);
+            }
+        }
+
+    </style>
+</noscript>
+<script>
+    if (localStorage.getItem("pref-theme") === "dark") {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else if (localStorage.getItem("pref-theme") === "light") {
+       document.querySelector("html").dataset.theme = 'light';
+    } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        document.querySelector("html").dataset.theme = 'dark';
+    } else {
+        document.querySelector("html").dataset.theme = 'light';
+    }
+
+</script>
+</head>
+<body id="top">
+    <header class="header">
+    <nav class="nav">
+        <div class="logo">
+            <a href="http://localhost:1313/otel-blog/" accesskey="h" title="OpenTelemetry Architecture &amp; Implementation (Alt + H)">OpenTelemetry Architecture &amp; Implementation</a>
+            <div class="logo-switches">
+                <button id="theme-toggle" accesskey="t" title="(Alt + T)" aria-label="Toggle theme">
+                    <svg id="moon" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                    <svg id="sun" xmlns="http://www.w3.org/2000/svg" width="24" height="18" viewBox="0 0 24 24"
+                        fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                        stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="5"></circle>
+                        <line x1="12" y1="1" x2="12" y2="3"></line>
+                        <line x1="12" y1="21" x2="12" y2="23"></line>
+                        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                        <line x1="1" y1="12" x2="3" y2="12"></line>
+                        <line x1="21" y1="12" x2="23" y2="12"></line>
+                        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                    </svg>
+                </button>
+            </div>
+        </div>
+        <ul id="menu">
+        </ul>
+    </nav>
+</header>
+<main class="main">
+
+<article class="post-single">
+  <header class="post-header">
+    <div class="breadcrumbs"><a href="http://localhost:1313/otel-blog/">Home</a>&nbsp;»&nbsp;<a href="http://localhost:1313/otel-blog/posts/">Posts</a></div>
+    <h1 class="post-title entry-hint-parent">
+      Beyond Prometheus: Building a High-Cardinality CockroachDB Receiver for OpenTelemetry
+    </h1>
+    <div class="post-description">
+      How to build a custom OpenTelemetry receiver that queries CockroachDB internals directly, preserving high-cardinality dimensional data that standard Prometheus scraping loses
+    </div>
+    <div class="post-meta"><span title='2024-10-31 00:00:00 -0700 -0700'>October 31, 2024</span>&nbsp;·&nbsp;<span>8 min</span>&nbsp;·&nbsp;<span>Aaron Jacobs</span>
+
+</div>
+  </header> 
+  <div class="post-content"><h2 id="why-standard-monitoring-falls-short-for-cockroachdb">Why Standard Monitoring Falls Short for CockroachDB<a hidden class="anchor" aria-hidden="true" href="#why-standard-monitoring-falls-short-for-cockroachdb">#</a></h2>
+<p>If you are familiar with CockroachDB performance, you have probably noticed that monitoring solutions take the easy path: they scrape the <code>/_status/vars</code> endpoint and call it a day.</p>
+<p>DataDog uses an OpenMetrics-based integration (a modern parsing framework for Prometheus-format metrics) that still collects from <code>/_status/vars</code>. Grafana uses Prometheus or Grafana Agent to scrape the same endpoint. Both get the same pre-aggregated, infrastructure-level data.</p>
+<p>Here is the problem: The <code>/_status/vars</code> endpoint only exposes metrics like CPU usage, memory consumption, and query throughput—cluster-wide averages that are great for keeping the lights on, but terrible for actually understanding what is happening inside your database at the query, session, or transaction level.</p>
+<p>When a production incident hits and you need to know which specific queries are causing contention, what sessions are blocking others, or why a particular table&rsquo;s performance degraded, those aggregated metrics leave you flying blind. You have lost all the dimensional context that operations teams need to troubleshoot real issues.</p>
+<p>DataDog&rsquo;s self-hosted integration explicitly states it &ldquo;only supports displaying cluster-wide averages of reported metrics&rdquo; with no per-node filtering. That is a fundamental limitation of the data source, not the collection mechanism.</p>
+<h2 id="the-dbmarlin-approach-going-straight-to-the-source">The DBMarlin Approach: Going Straight to the Source<a hidden class="anchor" aria-hidden="true" href="#the-dbmarlin-approach-going-straight-to-the-source">#</a></h2>
+<p>Only one vendor in the observability space has figured this out: DBMarlin. Instead of scraping the <code>/_status/vars</code> endpoint, DBMarlin queries CockroachDB&rsquo;s <code>crdb_internal</code> system catalog directly via SQL. This system catalog contains the real operational treasure trove:</p>
+<ul>
+<li><code>statement_statistics</code> - SQL fingerprints with execution plans and latency breakdowns</li>
+<li><code>cluster_locks</code> - Real-time lock contention data by transaction</li>
+<li><code>cluster_sessions</code> - Active session states with query details</li>
+<li><code>table_spans</code> - Actual table and index usage statistics</li>
+<li><code>ranges</code> - Replica health and distribution information</li>
+</ul>
+<p>This approach preserves all the high-cardinality dimensional data that gets lost in pre-aggregated metrics.</p>
+<h2 id="understanding-collection-methods-openmetrics-vs-sql-queries">Understanding Collection Methods: OpenMetrics vs. SQL Queries<a hidden class="anchor" aria-hidden="true" href="#understanding-collection-methods-openmetrics-vs-sql-queries">#</a></h2>
+<p>When DataDog advertises their &ldquo;OpenMetrics-based integration,&rdquo; they are describing how their agent parses the Prometheus format metrics—not what data they collect. Think of it this way:</p>
+<p><strong>OpenMetrics-Based Collection (DataDog, Grafana):</strong></p>
+<ul>
+<li>Collection Framework: Modern OpenMetrics parser or Prometheus scraper</li>
+<li>Data Source: HTTP endpoint <code>/_status/vars</code></li>
+<li>Data Format: Pre-aggregated time-series in Prometheus/OpenMetrics text format</li>
+<li>Content: Infrastructure metrics (CPU, memory, query counts)</li>
+<li>Result: Cluster-wide averages, no dimensional context</li>
+</ul>
+<p><strong>SQL-Based Collection (DBMarlin, Custom OTel Receivers):</strong></p>
+<ul>
+<li>Collection Framework: Database driver executing SQL queries</li>
+<li>Data Source: <code>crdb_internal</code> system catalog tables via PostgreSQL protocol</li>
+<li>Data Format: Relational result sets from internal tables</li>
+<li>Content: Operational metrics (per-query stats, session details, lock contention)</li>
+<li>Result: High-cardinality dimensional data with full business context</li>
+</ul>
+<p>DataDog&rsquo;s &ldquo;latest mode&rdquo; (<code>openmetrics_endpoint</code>) and &ldquo;legacy mode&rdquo; (<code>prometheus_url</code>) both hit the same <code>/_status/vars</code> endpoint—they just use different parsing engines. You are still getting the same limited data either way.</p>
+<p>The distinction matters: if you want to see which specific query is slow, in which database, with what lock contention, you need to query <code>crdb_internal</code> directly. No amount of sophisticated metric parsing will give you data that is not there.</p>
+<h2 id="why-opentelemetry-changes-everything">Why OpenTelemetry Changes Everything<a hidden class="anchor" aria-hidden="true" href="#why-opentelemetry-changes-everything">#</a></h2>
+<p>For enterprises migrating from commercial APM solutions like DataDog to open-source observability stacks, this dimensional data problem is make-or-break. Teams are used to deep, contextual visibility into their databases.</p>
+<p>This is where OpenTelemetry receivers come in. Think of receivers as similar to the proprietary &ldquo;integrations&rdquo; or &ldquo;extensions&rdquo; you would use in DataDog—modular components that know how to collect data from specific sources. The difference? OpenTelemetry receivers are vendor-neutral, extensible, and do not lock you into a specific backend.</p>
+<p>Just like a DataDog integration might scrape an API or execute SQL queries to collect metrics, an OpenTelemetry receiver does the same thing, but outputs data in a standardized format that can be sent to any backend: Prometheus, ClickHouse, Chronosphere, Honeycomb, and others.</p>
+<h2 id="building-a-custom-cockroachdb-receiver">Building a Custom CockroachDB Receiver<a hidden class="anchor" aria-hidden="true" href="#building-a-custom-cockroachdb-receiver">#</a></h2>
+<p>I built a custom OpenTelemetry receiver that takes the DBMarlin approach—querying <code>crdb_internal</code> directly to preserve all dimensional context. Here is what makes it different:</p>
+<h3 id="high-cardinality-dimensional-metrics">High-Cardinality Dimensional Metrics<a hidden class="anchor" aria-hidden="true" href="#high-cardinality-dimensional-metrics">#</a></h3>
+<p>Instead of aggregated counters, every metric includes rich dimensions:</p>
+<ul>
+<li>Query fingerprints with database, schema, and user context</li>
+<li>Session metrics tagged with application name and node location</li>
+<li>Transaction contention data with blocking/blocked relationships</li>
+<li>Index usage per table with read/write patterns</li>
+</ul>
+<h3 id="built-with-opentelemetry-collector-builder-ocb">Built with OpenTelemetry Collector Builder (OCB)<a hidden class="anchor" aria-hidden="true" href="#built-with-opentelemetry-collector-builder-ocb">#</a></h3>
+<p>The receiver is compiled into a custom collector binary using OCB, OpenTelemetry&rsquo;s official tool for building modular collectors. Here is the process:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#75715e"># Define your collector components in builder-config.yaml</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">dist</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">name</span>: <span style="color:#ae81ff">otelcol-cockroachdb</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">description</span>: <span style="color:#ae81ff">OpenTelemetry Collector with CockroachDB receiver</span>
+</span></span><span style="display:flex;"><span>  
+</span></span><span style="display:flex;"><span><span style="color:#f92672">receivers</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">gomod</span>: <span style="color:#ae81ff">github.com/npcomplete777/cockroachdbreceiver/cockroachreceiver v0.0.1</span>
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">path</span>: <span style="color:#ae81ff">./cockroachreceiver</span>
+</span></span><span style="display:flex;"><span>    
+</span></span><span style="display:flex;"><span><span style="color:#f92672">exporters</span>:
+</span></span><span style="display:flex;"><span>  - <span style="color:#f92672">gomod</span>: <span style="color:#ae81ff">go.opentelemetry.io/collector/exporter/otlphttpexporter v0.136.0</span>
+</span></span></code></pre></div><div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-bash" data-lang="bash"><span style="display:flex;"><span><span style="color:#75715e"># Build the custom collector</span>
+</span></span><span style="display:flex;"><span>~/ocb --config builder-config.yaml
+</span></span><span style="display:flex;"><span>
+</span></span><span style="display:flex;"><span><span style="color:#75715e"># Run with your configuration  </span>
+</span></span><span style="display:flex;"><span>./otelcol-cockroachdb/otelcol-cockroachdb --config config.yaml
+</span></span></code></pre></div><p>OCB handles all the complexity of dependency resolution, component registration, and binary compilation. You define what components you need; OCB builds a collector that includes exactly those components—nothing more, nothing less.</p>
+<h3 id="parallel-query-execution">Parallel Query Execution<a hidden class="anchor" aria-hidden="true" href="#parallel-query-execution">#</a></h3>
+<p>The receiver queries multiple <code>crdb_internal</code> tables in parallel:</p>
+<ul>
+<li>Query performance metrics</li>
+<li>Active session statistics</li>
+<li>Lock contention analysis</li>
+<li>Range distribution health</li>
+<li>Table and index usage patterns</li>
+</ul>
+<p>Each metric category runs independently with configurable timeouts, ensuring that one slow query does not block the entire collection cycle.</p>
+<h3 id="selective-metrics-collection">Selective Metrics Collection<a hidden class="anchor" aria-hidden="true" href="#selective-metrics-collection">#</a></h3>
+<p>Not every environment needs every metric. The receiver supports selective enabling:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">receivers</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">cockroachdb</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">enabled_metrics</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#ae81ff">query      </span> <span style="color:#75715e"># SQL statement statistics</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#ae81ff">session    </span> <span style="color:#75715e"># Active connections</span>
+</span></span><span style="display:flex;"><span>      - <span style="color:#ae81ff">contention </span> <span style="color:#75715e"># Lock conflicts</span>
+</span></span></code></pre></div><p>This reduces cardinality when needed while preserving the option for deep visibility when troubleshooting.</p>
+<h2 id="why-this-matters-for-enterprise-migrations">Why This Matters for Enterprise Migrations<a hidden class="anchor" aria-hidden="true" href="#why-this-matters-for-enterprise-migrations">#</a></h2>
+<p>Many Fortune 500 enterprises are evaluating moves away from expensive annual DataDog contracts. But they cannot sacrifice visibility. The observability data needs to be as good or better than what they had.</p>
+<p>When you are monitoring a distributed SQL database that is handling thousands of transactions per second across multiple regions, you need dimensional context. &ldquo;Average query latency is up&rdquo; does not cut it. You need to know:</p>
+<ul>
+<li>Which query fingerprint is slow</li>
+<li>In which database and region</li>
+<li>What is blocking it</li>
+<li>How it correlates with recent deployments</li>
+</ul>
+<p>An OpenMetrics integration scraping <code>/_status/vars</code> cannot answer those questions—whether it is running in DataDog, Grafana, or a custom Prometheus setup. The data simply is not there. A receiver querying <code>crdb_internal</code> can.</p>
+<p>This is why DBMarlin exists as a separate product despite DataDog dominating the market: they saw the gap and filled it. This custom receiver does the same thing, but outputs to open standards instead of another proprietary platform.</p>
+<h2 id="the-receiver-vs-integration-mental-model">The Receiver vs. Integration Mental Model<a hidden class="anchor" aria-hidden="true" href="#the-receiver-vs-integration-mental-model">#</a></h2>
+<p>If you are coming from the proprietary APM world, here is how to think about it:</p>
+<p><strong>DataDog Integration:</strong></p>
+<ul>
+<li>Vendor-specific code that collects from a data source</li>
+<li>Can scrape HTTP endpoints (like <code>/_status/vars</code>) OR execute SQL queries (depending on integration)</li>
+<li>Outputs to vendor&rsquo;s proprietary format</li>
+<li>Locked into that vendor&rsquo;s backend</li>
+<li>Configuration managed in vendor&rsquo;s UI</li>
+</ul>
+<p><strong>OpenTelemetry Receiver:</strong></p>
+<ul>
+<li>Vendor-neutral code that collects from a data source</li>
+<li>Can scrape HTTP endpoints OR execute SQL queries OR call APIs (depending on receiver implementation)</li>
+<li>Outputs to OTLP (OpenTelemetry Protocol) standard</li>
+<li>Send to any backend that speaks OTLP</li>
+<li>Configuration as code, version-controlled</li>
+<li>Build custom collectors with OCB for your exact needs</li>
+</ul>
+<p>The key insight: Proprietary integrations and OTel receivers can collect data in similar ways. DataDog has integrations that execute SQL queries (for Oracle, SQL Server). This custom CockroachDB receiver also executes SQL queries. The difference is not how data is collected—it is:</p>
+<ul>
+<li><strong>Vendor lock-in</strong> - DataDog integration outputs only work with DataDog; OTel receivers work with any OTLP backend</li>
+<li><strong>Extensibility</strong> - You can build custom OTel receivers for your specific needs; proprietary integrations require vendor support</li>
+<li><strong>Data ownership</strong> - OTel data flows where you decide; proprietary integrations force your data through vendor infrastructure</li>
+</ul>
+<p>The receiver handles the &ldquo;how do I get data from X source&rdquo; problem. Your choice of exporter handles the &ldquo;where does this data go&rdquo; problem. They are decoupled. That is the power of OpenTelemetry.</p>
+<h2 id="production-deployment-kubernetes-native-high-availability">Production Deployment: Kubernetes-Native High Availability<a hidden class="anchor" aria-hidden="true" href="#production-deployment-kubernetes-native-high-availability">#</a></h2>
+<p>Custom OpenTelemetry collectors deploy as standard Kubernetes Deployments, giving you enterprise-grade high availability out of the box:</p>
+<div class="highlight"><pre tabindex="0" style="color:#f8f8f2;background-color:#272822;-moz-tab-size:4;-o-tab-size:4;tab-size:4;"><code class="language-yaml" data-lang="yaml"><span style="display:flex;"><span><span style="color:#f92672">apiVersion</span>: <span style="color:#ae81ff">apps/v1</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">kind</span>: <span style="color:#ae81ff">Deployment</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">metadata</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">name</span>: <span style="color:#ae81ff">otelcol-cockroachdb</span>
+</span></span><span style="display:flex;"><span><span style="color:#f92672">spec</span>:
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">replicas</span>: <span style="color:#ae81ff">3</span>  <span style="color:#75715e"># HA across availability zones</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">selector</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">matchLabels</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">app</span>: <span style="color:#ae81ff">otelcol-cockroachdb</span>
+</span></span><span style="display:flex;"><span>  <span style="color:#f92672">template</span>:
+</span></span><span style="display:flex;"><span>    <span style="color:#f92672">spec</span>:
+</span></span><span style="display:flex;"><span>      <span style="color:#f92672">containers</span>:
+</span></span><span style="display:flex;"><span>      - <span style="color:#f92672">name</span>: <span style="color:#ae81ff">otelcol</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">image</span>: <span style="color:#ae81ff">your-registry/otelcol-cockroachdb:latest</span>
+</span></span><span style="display:flex;"><span>        <span style="color:#f92672">resources</span>:
+</span></span><span style="display:flex;"><span>          <span style="color:#f92672">requests</span>:
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">memory</span>: <span style="color:#e6db74">&#34;512Mi&#34;</span>
+</span></span><span style="display:flex;"><span>            <span style="color:#f92672">cpu</span>: <span style="color:#e6db74">&#34;500m&#34;</span>
+</span></span></code></pre></div><p>Kubernetes handles the operational complexity:</p>
+<ul>
+<li>Replica sets ensure your collectors stay running across node failures</li>
+<li>Horizontal Pod Autoscaling scales collection capacity with query volume</li>
+<li>Rolling updates deploy new receiver versions without collection gaps</li>
+<li>Health checks automatically restart failed collectors</li>
+</ul>
+<p>Each collector instance queries CockroachDB independently and exports to your backend—no coordination required. Your observability pipeline scales horizontally just like your database does.</p>
+<h2 id="where-to-go-from-here">Where to Go From Here<a hidden class="anchor" aria-hidden="true" href="#where-to-go-from-here">#</a></h2>
+<p>The open-source observability ecosystem is maturing rapidly. ClickHouse-based backends like Uptrace and SigNoz can handle petabyte-scale, high-cardinality data that would bankrupt you on traditional SaaS platforms. But they need dimensional data to be useful.</p>
+<p>Building custom receivers that preserve this context is how enterprises achieve both cost savings and operational excellence.</p>
+<p>For CockroachDB specifically, the path is clear:</p>
+<p><strong>If you only need infrastructure metrics:</strong> Use DataDog&rsquo;s OpenMetrics integration or Grafana&rsquo;s Prometheus scraper pointing to <code>/_status/vars</code>. You will get cluster health, resource utilization, and basic throughput metrics. This is sufficient for capacity planning and keeping the lights on.</p>
+<p><strong>If you need operational visibility:</strong> Query <code>crdb_internal</code> directly (like DBMarlin does) to preserve dimensional context. This is essential for troubleshooting production incidents, understanding query performance, and identifying lock contention.</p>
+<p><strong>If you need operational visibility without vendor lock-in:</strong> Build a custom OpenTelemetry receiver that queries <code>crdb_internal</code> and exports to OTLP. Now your dimensional data can flow to ClickHouse, Dash0, or any other backend—your choice, not your vendor&rsquo;s.</p>
+<p>The real value is not just using OpenTelemetry—it is collecting the right data in the first place, then having the freedom to route it wherever your architecture demands.</p>
+<h2 id="references">References<a hidden class="anchor" aria-hidden="true" href="#references">#</a></h2>
+<ul>
+<li><a href="https://github.com/npcomplete777/cockroachdbreceiver">CockroachDB Receiver GitHub Repository</a></li>
+<li><a href="https://www.cockroachlabs.com/docs/stable/monitoring-and-alerting">CockroachDB Monitoring and Alerting Documentation</a></li>
+<li><a href="https://www.cockroachlabs.com/docs/stable/crdb-internal">CockroachDB crdb_internal System Catalog</a></li>
+<li><a href="https://www.dbmarlin.com/dbmarlin-for-cockroachdb">DBMarlin for CockroachDB</a></li>
+<li><a href="https://opentelemetry.io/docs/collector/custom-collector/">OpenTelemetry Custom Collector Documentation</a></li>
+<li><a href="https://docs.datadoghq.com/integrations/cockroachdb">DataDog CockroachDB Integration</a></li>
+</ul>
+
+
+  </div>
+
+  <footer class="post-footer">
+    <ul class="post-tags">
+      <li><a href="http://localhost:1313/otel-blog/tags/opentelemetry/">Opentelemetry</a></li>
+      <li><a href="http://localhost:1313/otel-blog/tags/cockroachdb/">Cockroachdb</a></li>
+      <li><a href="http://localhost:1313/otel-blog/tags/observability/">Observability</a></li>
+      <li><a href="http://localhost:1313/otel-blog/tags/otel/">Otel</a></li>
+      <li><a href="http://localhost:1313/otel-blog/tags/monitoring/">Monitoring</a></li>
+      <li><a href="http://localhost:1313/otel-blog/tags/high-cardinality/">High-Cardinality</a></li>
+    </ul>
+
+  </footer>
+</article>
+    </main>
+    
+<footer class="footer">
+        <span>&copy; 2025 <a href="http://localhost:1313/otel-blog/">OpenTelemetry Architecture &amp; Implementation</a></span> · 
+
+    <span>
+        Powered by
+        <a href="https://gohugo.io/" rel="noopener noreferrer" target="_blank">Hugo</a> &
+        <a href="https://github.com/adityatelange/hugo-PaperMod/" rel="noopener" target="_blank">PaperMod</a>
+    </span>
+</footer>
+<a href="#top" aria-label="go to top" title="Go to Top (Alt + G)" class="top-link" id="top-link" accesskey="g">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 12 6" fill="currentColor">
+        <path d="M12 6H0l6-6z" />
+    </svg>
+</a>
+
+<script>
+    let menu = document.getElementById('menu');
+    if (menu) {
+        
+        const scrollPosition = localStorage.getItem("menu-scroll-position");
+        if (scrollPosition) {
+            menu.scrollLeft = parseInt(scrollPosition, 10);
+        }
+        
+        menu.onscroll = function () {
+            localStorage.setItem("menu-scroll-position", menu.scrollLeft);
+        }
+    }
+
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+        anchor.addEventListener("click", function (e) {
+            e.preventDefault();
+            var id = this.getAttribute("href").substr(1);
+            if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView({
+                    behavior: "smooth"
+                });
+            } else {
+                document.querySelector(`[id='${decodeURIComponent(id)}']`).scrollIntoView();
+            }
+            if (id === "top") {
+                history.replaceState(null, null, " ");
+            } else {
+                history.pushState(null, null, `#${id}`);
+            }
+        });
+    });
+
+</script>
+<script>
+    var mybutton = document.getElementById("top-link");
+    window.onscroll = function () {
+        if (document.body.scrollTop > 800 || document.documentElement.scrollTop > 800) {
+            mybutton.style.visibility = "visible";
+            mybutton.style.opacity = "1";
+        } else {
+            mybutton.style.visibility = "hidden";
+            mybutton.style.opacity = "0";
+        }
+    };
+
+</script>
+<script>
+    document.getElementById("theme-toggle").addEventListener("click", () => {
+        const html = document.querySelector("html");
+        if (html.dataset.theme === "dark") {
+            html.dataset.theme = 'light';
+            localStorage.setItem("pref-theme", 'light');
+        } else {
+            html.dataset.theme = 'dark';
+            localStorage.setItem("pref-theme", 'dark');
+        }
+    })
+
+</script>
+<script>
+    document.querySelectorAll('pre > code').forEach((codeblock) => {
+        const container = codeblock.parentNode.parentNode;
+
+        const copybutton = document.createElement('button');
+        copybutton.classList.add('copy-code');
+        copybutton.innerHTML = 'copy';
+
+        function copyingDone() {
+            copybutton.innerHTML = 'copied!';
+            setTimeout(() => {
+                copybutton.innerHTML = 'copy';
+            }, 2000);
+        }
+
+        copybutton.addEventListener('click', (cb) => {
+            if ('clipboard' in navigator) {
+                navigator.clipboard.writeText(codeblock.textContent);
+                copyingDone();
+                return;
+            }
+
+            const range = document.createRange();
+            range.selectNodeContents(codeblock);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            try {
+                document.execCommand('copy');
+                copyingDone();
+            } catch (e) { };
+            selection.removeRange(range);
+        });
+
+        if (container.classList.contains("highlight")) {
+            container.appendChild(copybutton);
+        } else if (container.parentNode.firstChild == container) {
+            
+        } else if (codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.nodeName == "TABLE") {
+            
+            codeblock.parentNode.parentNode.parentNode.parentNode.parentNode.appendChild(copybutton);
+        } else {
+            
+            codeblock.parentNode.appendChild(copybutton);
+        }
+    });
+</script>
+</body>
+
+</html>

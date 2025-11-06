@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+  <channel>
+    <title>Posts on OpenTelemetry Architecture &amp; Implementation</title>
+    <link>http://localhost:1313/otel-blog/posts/</link>
+    <description>Recent content in Posts on OpenTelemetry Architecture &amp; Implementation</description>
+    <generator>Hugo -- 0.152.2</generator>
+    <language>en-us</language>
+    <lastBuildDate>Thu, 31 Oct 2024 00:00:00 -0700</lastBuildDate>
+    <atom:link href="http://localhost:1313/otel-blog/posts/index.xml" rel="self" type="application/rss+xml" />
+    <item>
+      <title>Beyond Prometheus: Building a High-Cardinality CockroachDB Receiver for OpenTelemetry</title>
+      <link>http://localhost:1313/otel-blog/posts/cockroachdb-high-cardinality-receiver/</link>
+      <pubDate>Thu, 31 Oct 2024 00:00:00 -0700</pubDate>
+      <guid>http://localhost:1313/otel-blog/posts/cockroachdb-high-cardinality-receiver/</guid>
+      <description>How to build a custom OpenTelemetry receiver that queries CockroachDB internals directly, preserving high-cardinality dimensional data that standard Prometheus scraping loses</description>
+    </item>
+  </channel>
+</rss>
